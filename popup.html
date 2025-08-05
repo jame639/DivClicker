@@ -12,7 +12,7 @@
     <!-- 说明文字 -->
     <div class="info-section">
       <p style="font-size: 12px; color: #666; margin: 10px 0;">
-        注：在查找目标元素时，系统会自动点击所有 class4 元素以加载动态内容
+        注：点击后会自动处理 class4 元素以加载动态内容，然后直接点击所有匹配的目标元素
       </p>
     </div>
     
@@ -27,25 +27,15 @@
       </div>
     </div>
     <div class="button-group">
-      <button id="findBtn" class="button button-primary">查找元素</button>
+      <button id="findBtn" class="button button-primary">点击元素</button>
       <button id="clearBtn" class="button button-secondary" style="display: none;">清除高亮</button>
+      <button id="refreshBtn" class="button button-info" style="display: none;" title="刷新标签页信息">🔄</button>
+      <button id="pinBtn" class="button button-pin" title="打开固定窗口">📌</button>
+    </div>
+    <div id="currentTab" class="current-tab-info" style="display: none;">
+      <div class="tab-connection-status" id="connectionStatus"></div>
     </div>
     <div id="status" class="status-text"></div>
-    
-    <!-- 元素列表区域 -->
-    <div id="elementsContainer" style="display: none;">
-      <div class="elements-header">
-        <span>找到的元素:</span>
-        <div class="select-controls">
-          <button id="selectAllBtn" class="mini-button">全选</button>
-          <button id="selectNoneBtn" class="mini-button">全不选</button>
-        </div>
-      </div>
-      <div id="elementsList" class="elements-list"></div>
-      <div class="action-buttons">
-        <button id="clickSelectedBtn" class="button button-success">点击选中的元素</button>
-      </div>
-    </div>
   </div>
   <script src="popup.js"></script>
 </body>

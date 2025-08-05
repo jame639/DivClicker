@@ -11,6 +11,12 @@ body {
   padding: 10px;
 }
 
+/* 独立窗口模式下的样式调整 */
+.standalone-window .container {
+  width: 400px;
+  padding: 15px;
+}
+
 /* 预处理区域样式 */
 .preprocess-section, .target-section {
   margin-bottom: 10px;
@@ -123,6 +129,34 @@ h1 {
   background-color: #27ae60;
 }
 
+.button-info {
+  background-color: #17a2b8;
+  color: white;
+  font-size: 14px;
+  padding: 8px 10px;
+  min-width: 36px;
+  flex: 0 0 auto;
+}
+
+.button-info:hover {
+  background-color: #138496;
+  transform: scale(1.05);
+}
+
+.button-pin {
+  background-color: #f39c12;
+  color: white;
+  font-size: 14px;
+  padding: 8px 10px;
+  min-width: 36px;
+  flex: 0 0 auto;
+}
+
+.button-pin:hover {
+  background-color: #e67e22;
+  transform: scale(1.05);
+}
+
 .mini-button {
   padding: 4px 8px;
   border: none;
@@ -144,6 +178,54 @@ h1 {
   margin-bottom: 10px;
   font-size: 12px;
   text-align: center;
+}
+
+.current-tab-info {
+  padding: 8px;
+  margin-bottom: 10px;
+  background-color: #e8f4fd;
+  border: 1px solid #bee5eb;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #0c5460;
+  word-break: break-word;
+}
+
+.current-tab-info .tab-title {
+  font-weight: bold;
+  margin-bottom: 2px;
+}
+
+.current-tab-info .tab-url {
+  color: #666;
+  font-family: monospace;
+}
+
+.tab-connection-status {
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: bold;
+  margin-top: 4px;
+  text-align: center;
+}
+
+.tab-connection-status.connected {
+  background-color: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
+
+.tab-connection-status.connecting {
+  background-color: #fff3cd;
+  color: #856404;
+  border: 1px solid #ffeaa7;
+}
+
+.tab-connection-status.disconnected {
+  background-color: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
 }
 
 /* 元素列表样式 */

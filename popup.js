@@ -1,15 +1,258 @@
+// 检查是否在独立窗口中运行
+const isStandaloneWindow = window.location.search.includes('standalone=true');
+
+// 全局变量
+let currentTab = null;
+let tabUpdateInterval = null;
+
+// 获取目标标签页的函数
+function getTargetTab(callback) {
+  if (isStandaloneWindow) {
+    // 独立窗口模式：获取当前活跃的标签页（跨所有窗口）
+    chrome.tabs.query({active: true}, function(tabs) {
+      // 过滤掉扩展页面
+      const normalTabs = tabs.filter(tab => 
+        !tab.url.startsWith('chrome-extension://') && 
+        !tab.url.startsWith('chrome://') &&
+        !tab.url.startsWith('moz-extension://') &&
+        !tab.url.startsWith('about:')
+      );
+      
+      if (normalTabs.length > 0) {
+        callback(normalTabs[0]);
+        return;
+      }
+      
+      // 如果没有活跃的正常标签页，查找最近访问的
+      chrome.tabs.query({}, function(allTabs) {
+        const availableTabs = allTabs.filter(tab => 
+          !tab.url.startsWith('chrome-extension://') && 
+          !tab.url.startsWith('chrome://') &&
+          !tab.url.startsWith('moz-extension://') &&
+          !tab.url.startsWith('about:')
+        );
+        
+        if (availableTabs.length === 0) {
+          callback(null);
+          return;
+        }
+        
+        // 找到最近活跃的标签页
+        const targetTab = availableTabs.reduce((latest, current) => 
+          (current.lastAccessed || 0) > (latest.lastAccessed || 0) ? current : latest
+        );
+        
+        callback(targetTab);
+      });
+    });
+  } else {
+    // 普通popup模式：使用当前活跃标签页
+    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+      callback(tabs[0] || null);
+    });
+  }
+}
+
+// 显示当前目标标签页信息
+function displayCurrentTab(tab) {
+  const currentTabDiv = document.getElementById('currentTab');
+  if (!currentTabDiv) return;
+  
+  if (isStandaloneWindow && tab) {
+    currentTabDiv.innerHTML = `
+      <div class="tab-title">当前操作页面: ${tab.title || '未知页面'}</div>
+      <div class="tab-url">${tab.url || ''}</div>
+      <div class="tab-connection-status" id="connectionStatus">检测中...</div>
+    `;
+    currentTabDiv.style.display = 'block';
+    
+    // 重新获取连接状态元素
+    const newConnectionStatusDiv = document.getElementById('connectionStatus');
+    updateConnectionStatus(tab, newConnectionStatusDiv);
+  } else {
+    currentTabDiv.style.display = 'none';
+  }
+}
+
+// 更新连接状态
+function updateConnectionStatus(tab, statusElement) {
+  if (!tab || !statusElement) return;
+  
+  statusElement.textContent = '检测连接...';
+  statusElement.className = 'tab-connection-status connecting';
+  
+  // 检测脚本是否已注入
+  chrome.tabs.sendMessage(tab.id, { action: 'ping' }, function(response) {
+    if (chrome.runtime.lastError || !response) {
+      statusElement.textContent = '未连接 - 将自动注入脚本';
+      statusElement.className = 'tab-connection-status disconnected';
+    } else {
+      statusElement.textContent = '✓ 已连接，可以操作';
+      statusElement.className = 'tab-connection-status connected';
+    }
+  });
+}
+
+// 标签页监听器 - 实时检测焦点标签页变化
+function startTabListener() {
+  // 立即更新一次
+  updateCurrentTab();
+  
+  // 设置定时器，每3秒检查一次标签页变化（降低频率以提升性能）
+  tabUpdateInterval = setInterval(updateCurrentTab, 3000);
+  
+  // 监听标签页激活事件
+  if (chrome.tabs && chrome.tabs.onActivated) {
+    chrome.tabs.onActivated.addListener(function(activeInfo) {
+      console.log('[DivClicker] 标签页激活事件:', activeInfo);
+      setTimeout(updateCurrentTab, 200); // 延迟一点执行，确保标签页信息已更新
+    });
+  }
+  
+  // 监听标签页更新事件
+  if (chrome.tabs && chrome.tabs.onUpdated) {
+    chrome.tabs.onUpdated.addListener(function(tabId, changeInfo, tab) {
+      if (changeInfo.status === 'complete' || changeInfo.title) {
+        console.log('[DivClicker] 标签页更新事件:', tabId, changeInfo);
+        setTimeout(updateCurrentTab, 200);
+      }
+    });
+  }
+  
+  // 监听窗口焦点变化
+  if (chrome.windows && chrome.windows.onFocusChanged) {
+    chrome.windows.onFocusChanged.addListener(function(windowId) {
+      if (windowId !== chrome.windows.WINDOW_ID_NONE) {
+        console.log('[DivClicker] 窗口焦点变化:', windowId);
+        setTimeout(updateCurrentTab, 200);
+      }
+    });
+  }
+}
+
+// 更新当前标签页信息
+function updateCurrentTab() {
+  getTargetTab(function(tab) {
+    // 检查标签页是否发生变化
+    const hasChanged = !currentTab || 
+                      !tab || 
+                      currentTab.id !== tab.id || 
+                      currentTab.url !== tab.url || 
+                      currentTab.title !== tab.title;
+    
+    if (hasChanged) {
+      console.log('[DivClicker] 检测到标签页变化:', currentTab?.title, '->', tab?.title);
+      currentTab = tab;
+      displayCurrentTab(tab);
+      
+      // 如果有新的标签页，预先检查是否需要注入脚本
+      if (tab) {
+        preInjectScript(tab);
+      }
+    }
+  });
+}
+
+// 预先注入脚本到新标签页
+function preInjectScript(tab) {
+  // 发送一个测试消息来检查脚本是否已注入
+  chrome.tabs.sendMessage(tab.id, { action: 'ping' }, function(response) {
+    if (chrome.runtime.lastError) {
+      console.log('[DivClicker] 标签页需要注入脚本:', tab.title);
+      // 尝试注入content script
+      chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['content.js']
+      }, function() {
+        if (chrome.runtime.lastError) {
+          console.log('[DivClicker] 预注入失败:', chrome.runtime.lastError.message);
+        } else {
+          console.log('[DivClicker] 预注入成功:', tab.title);
+          // 重新检测连接状态
+          const statusElement = document.getElementById('connectionStatus');
+          if (statusElement) {
+            setTimeout(() => updateConnectionStatus(tab, statusElement), 500);
+          }
+        }
+      });
+    } else {
+      console.log('[DivClicker] 标签页脚本已就绪:', tab.title);
+    }
+  });
+}
+
+// 停止标签页监听器
+function stopTabListener() {
+  if (tabUpdateInterval) {
+    clearInterval(tabUpdateInterval);
+    tabUpdateInterval = null;
+  }
+}
+
+// 窗口关闭时清理
+window.addEventListener('beforeunload', stopTabListener);
+
 document.addEventListener('DOMContentLoaded', function() {
+  // 如果是独立窗口，添加特殊样式
+  if (isStandaloneWindow) {
+    document.body.classList.add('standalone-window');
+    // 隐藏固定按钮
+    const pinBtn = document.getElementById('pinBtn');
+    if (pinBtn) {
+      pinBtn.style.display = 'none';
+    }
+    
+    // 启动标签页监听器
+    startTabListener();
+  }
+  
+  // 固定窗口按钮事件
+  const pinBtn = document.getElementById('pinBtn');
+  if (pinBtn && !isStandaloneWindow) {
+    pinBtn.addEventListener('click', function() {
+      chrome.windows.create({
+        url: chrome.runtime.getURL('popup.html?standalone=true'),
+        type: 'popup',
+        width: 420,
+        height: 650,
+        focused: true
+      }, function(newWindow) {
+        if (chrome.runtime.lastError) {
+          console.error('创建独立窗口失败:', chrome.runtime.lastError);
+        } else {
+          // 关闭当前popup（如果是在popup中）
+          if (window.chrome && window.chrome.extension) {
+            window.close();
+          }
+        }
+      });
+    });
+  }
+  
   const findBtn = document.getElementById('findBtn');
   const clearBtn = document.getElementById('clearBtn');
-  const clickSelectedBtn = document.getElementById('clickSelectedBtn');
-  const selectAllBtn = document.getElementById('selectAllBtn');
-  const selectNoneBtn = document.getElementById('selectNoneBtn');
+  const refreshBtn = document.getElementById('refreshBtn');
   const statusDiv = document.getElementById('status');
-  const elementsContainer = document.getElementById('elementsContainer');
-  const elementsList = document.getElementById('elementsList');
+  const currentTabDiv = document.getElementById('currentTab');
+  const connectionStatusDiv = document.getElementById('connectionStatus');
   
   let currentClassNames = [];
-  let foundElements = [];
+
+  // 在独立窗口模式下显示刷新按钮
+  if (isStandaloneWindow && refreshBtn) {
+    refreshBtn.style.display = 'block';
+    refreshBtn.addEventListener('click', function() {
+      console.log('[DivClicker] 手动刷新标签页信息');
+      updateCurrentTab();
+      statusDiv.textContent = '已刷新标签页信息';
+      statusDiv.style.color = '#17a2b8';
+      setTimeout(() => {
+        if (statusDiv.textContent === '已刷新标签页信息') {
+          statusDiv.textContent = '';
+        }
+      }, 2000);
+    });
+  }
 
   // 查找元素按钮点击事件
   findBtn.addEventListener('click', function() {
@@ -24,148 +267,102 @@ document.addEventListener('DOMContentLoaded', function() {
     currentClassNames = classNames.split(' ').filter(name => name.trim());
     statusDiv.textContent = '正在处理页面元素...';
     statusDiv.style.color = '#3498db';
-    elementsContainer.style.display = 'none';
 
-    // 向content.js发送查找消息
-    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-      if (chrome.runtime.lastError) {
-        statusDiv.textContent = '获取当前页面失败';
+    // 获取目标标签页并发送消息
+    getTargetTab(function(tab) {
+      if (!tab) {
+        statusDiv.textContent = '未找到可操作的页面';
         statusDiv.style.color = '#e74c3c';
+        currentTabDiv.style.display = 'none';
         return;
       }
       
-      if (!tabs[0]) {
-        statusDiv.textContent = '未找到活动页面';
-        statusDiv.style.color = '#e74c3c';
-        return;
-      }
+      // 显示当前目标标签页信息
+      displayCurrentTab(tab);
       
       const message = {
-        action: 'findElements',
+        action: 'clickElements',  // 直接点击，不再是findElements
         classNames: currentClassNames
       };
       
-      chrome.tabs.sendMessage(tabs[0].id, message, function(response) {
-        if (chrome.runtime.lastError) {
-          statusDiv.textContent = '无法与页面通信，请刷新页面后重试';
-          statusDiv.style.color = '#e74c3c';
-          return;
-        }
-        
-        if (response && response.status === 'success') {
-          foundElements = response.elements || [];
-          if (foundElements.length === 0) {
-            statusDiv.textContent = '未找到匹配的目标元素';
-            statusDiv.style.color = '#f39c12';
-            elementsContainer.style.display = 'none';
-          } else {
-            let statusText = `找到 ${foundElements.length} 个目标元素（已在页面中高亮显示）`;
-            if (response.preprocessCount !== undefined) {
-              statusText = `处理了 ${response.preprocessCount} 个触发元素，找到并点击了 ${foundElements.length} 个目标元素`;
-            }
-            statusDiv.textContent = statusText;
-            statusDiv.style.color = '#2ecc71';
-            displayElements(foundElements);
-            elementsContainer.style.display = 'block';
-            clearBtn.style.display = 'inline-block';
+      // 改进的消息发送和脚本注入逻辑
+      function sendMessageWithInjection() {
+        // 首先尝试发送消息
+        chrome.tabs.sendMessage(tab.id, message, function(response) {
+          if (chrome.runtime.lastError) {
+            console.log('[DivClicker] 首次通信失败，尝试注入脚本:', chrome.runtime.lastError.message);
+            
+            // 尝试注入content script
+            chrome.scripting.executeScript({
+              target: { tabId: tab.id },
+              files: ['content.js']
+            }, function() {
+              if (chrome.runtime.lastError) {
+                console.error('[DivClicker] 脚本注入失败:', chrome.runtime.lastError.message);
+                statusDiv.textContent = `脚本注入失败: ${chrome.runtime.lastError.message}`;
+                statusDiv.style.color = '#e74c3c';
+                return;
+              }
+              
+              console.log('[DivClicker] 脚本注入成功，等待页面准备...');
+              
+              // 等待一小段时间让脚本初始化
+              setTimeout(() => {
+                chrome.tabs.sendMessage(tab.id, message, function(response) {
+                  if (chrome.runtime.lastError) {
+                    console.error('[DivClicker] 重试通信失败:', chrome.runtime.lastError.message);
+                    statusDiv.textContent = '页面通信失败，请刷新页面后重试';
+                    statusDiv.style.color = '#e74c3c';
+                    return;
+                  }
+                  console.log('[DivClicker] 重试通信成功');
+                  handleResponse(response);
+                });
+              }, 500);
+            });
+            return;
           }
-        } else {
-          statusDiv.textContent = response?.message || '查找失败';
-          statusDiv.style.color = '#e74c3c';
-        }
-      });
-    });
-  });
-
-  // 显示元素列表
-  function displayElements(elements) {
-    elementsList.innerHTML = '';
-    
-    elements.forEach((element, index) => {
-      const elementDiv = document.createElement('div');
-      elementDiv.className = 'element-item';
+          console.log('[DivClicker] 首次通信成功');
+          handleResponse(response);
+        });
+      }
       
-      elementDiv.innerHTML = `
-        <div class="element-checkbox">
-          <input type="checkbox" id="element_${index}" value="${index}" checked>
-          <label for="element_${index}" class="element-number">#${index}</label>
-        </div>
-        <div class="element-info">
-          <div class="element-tag">&lt;${element.tagName}&gt;</div>
-          <div class="element-details">
-            ${element.className ? `<span class="element-class">class="${element.className}"</span>` : ''}
-            ${element.id ? `<span class="element-id">id="${element.id}"</span>` : ''}
-          </div>
-          <div class="element-text">${element.text}</div>
-          <div class="element-status ${element.visible ? 'visible' : 'hidden'}">
-            ${element.visible ? '可见' : '隐藏'}
-          </div>
-        </div>
-      `;
-      
-      elementsList.appendChild(elementDiv);
-    });
-  }
-
-  // 全选按钮
-  selectAllBtn.addEventListener('click', function() {
-    const checkboxes = elementsList.querySelectorAll('input[type="checkbox"]');
-    checkboxes.forEach(cb => cb.checked = true);
-  });
-
-  // 全不选按钮
-  selectNoneBtn.addEventListener('click', function() {
-    const checkboxes = elementsList.querySelectorAll('input[type="checkbox"]');
-    checkboxes.forEach(cb => cb.checked = false);
-  });
-
-  // 点击选中元素按钮
-  clickSelectedBtn.addEventListener('click', function() {
-    const checkboxes = elementsList.querySelectorAll('input[type="checkbox"]:checked');
-    const selectedIndices = Array.from(checkboxes).map(cb => parseInt(cb.value));
-    
-    if (selectedIndices.length === 0) {
-      statusDiv.textContent = '请至少选择一个元素';
-      statusDiv.style.color = '#e74c3c';
-      return;
-    }
-
-    statusDiv.textContent = `正在点击 ${selectedIndices.length} 个元素...`;
-    statusDiv.style.color = '#3498db';
-
-    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-      chrome.tabs.sendMessage(tabs[0].id, {
-        action: 'clickElements',
-        classNames: currentClassNames,
-        indices: selectedIndices
-      }, function(response) {
-        if (chrome.runtime.lastError) {
-          statusDiv.textContent = '无法与页面通信';
-          statusDiv.style.color = '#e74c3c';
-          return;
-        }
+      function handleResponse(response) {
         
         if (response && response.status === 'success') {
-          statusDiv.textContent = `成功点击了 ${response.count} 个元素`;
+          let statusText = `成功点击了 ${response.count} 个目标元素`;
+          if (response.preprocessCount !== undefined) {
+            statusText = `处理了 ${response.preprocessCount} 个触发元素，点击了 ${response.count} 个目标元素`;
+          }
+          statusDiv.textContent = statusText;
           statusDiv.style.color = '#2ecc71';
-          // 点击完成后隐藏元素列表
-          elementsContainer.style.display = 'none';
-          clearBtn.style.display = 'none';
         } else {
-          statusDiv.textContent = response?.message || '点击失败';
+          statusDiv.textContent = response?.message || '操作失败';
           statusDiv.style.color = '#e74c3c';
         }
-      });
+      }
+      
+      // 调用发送消息函数
+      sendMessageWithInjection();
     });
   });
-
-  // 清除高亮按钮
+  
+  // 清除高亮按钮（已移除元素选择功能，只保留清除功能）
   clearBtn.addEventListener('click', function() {
-    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-      chrome.tabs.sendMessage(tabs[0].id, {
+    getTargetTab(function(tab) {
+      if (!tab) {
+        statusDiv.textContent = '未找到可操作的页面';
+        statusDiv.style.color = '#e74c3c';
+        currentTabDiv.style.display = 'none';
+        return;
+      }
+      
+      // 显示当前目标标签页信息
+      displayCurrentTab(tab);
+      
+      chrome.tabs.sendMessage(tab.id, {
         action: 'clearHighlight'
       }, function(response) {
-        elementsContainer.style.display = 'none';
         clearBtn.style.display = 'none';
         statusDiv.textContent = '已清除高亮';
         statusDiv.style.color = '#666';

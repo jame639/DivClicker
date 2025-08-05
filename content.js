@@ -2,14 +2,28 @@
 chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
   console.log('[DivClicker] 收到消息:', request);
   
+  // 响应ping消息，用于检测脚本是否已注入
+  if (request.action === 'ping') {
+    console.log('[DivClicker] 响应ping消息');
+    sendResponse({ status: 'pong', ready: true });
+    return true;
+  }
+  
   if (!document || !document.body) {
     console.error('[DivClicker] 错误: 未获取到DOM元素');
     sendResponse({ status: 'error', message: 'DOM not ready' });
     return true;
   }
   
-  if (request.action === 'findElements') {
+  if (request.action === 'findElements' || request.action === 'clickElements') {
     console.log('[DivClicker] 开始查找和处理元素:', request.classNames);
+    
+    // 验证classNames参数
+    if (!request.classNames || !Array.isArray(request.classNames) || request.classNames.length === 0) {
+      console.error('[DivClicker] 错误: classNames参数无效');
+      sendResponse({ status: 'error', message: 'Invalid classNames parameter' });
+      return true;
+    }
     
     const handleFind = async () => {
       try {
@@ -21,9 +35,17 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
         console.log('[DivClicker] 初始页面找到目标元素数量:', initialElements.length);
         
         // 点击初始页面的目标元素
+        let clickedInitial = 0;
         initialElements.forEach((el, index) => {
-          console.log(`[DivClicker] 点击初始目标元素 ${index + 1}/${initialElements.length}`);
-          el.click();
+          try {
+            console.log(`[DivClicker] 点击初始目标元素 ${index + 1}/${initialElements.length}`);
+            if (el && typeof el.click === 'function') {
+              el.click();
+              clickedInitial++;
+            }
+          } catch (e) {
+            console.warn(`[DivClicker] 点击初始元素失败 ${index + 1}:`, e);
+          }
         });
         
         // 查找class4元素（xch-menu-item）
@@ -32,52 +54,54 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
         console.log('[DivClicker] 找到class4元素数量:', class4Count);
         
         let totalTargetElements = [...initialElements];
+        let totalClicked = clickedInitial;
         
         // 依次点击每个class4元素，然后查找并点击新出现的目标元素
         for (let i = 0; i < class4Elements.length; i++) {
-          console.log(`[DivClicker] 点击class4元素 ${i + 1}/${class4Count}`);
-          class4Elements[i].click();
-          
-          // 等待DOM更新
-          await new Promise(resolve => setTimeout(resolve, 5000));
-          
-          // 查找新出现的目标元素
-          const newElements = document.querySelectorAll(selector);
-          console.log('[DivClicker] 点击class4后找到目标元素数量:', newElements.length);
-          
-          // 点击所有找到的目标元素
-          newElements.forEach((el, index) => {
-            console.log(`[DivClicker] 点击新出现的目标元素 ${index + 1}/${newElements.length}`);
-            el.click();
-          });
-          
-          // 收集所有元素信息（避免重复）
-          newElements.forEach(el => {
-            if (!totalTargetElements.some(existing => existing === el)) {
-              totalTargetElements.push(el);
+          try {
+            console.log(`[DivClicker] 点击class4元素 ${i + 1}/${class4Count}`);
+            if (class4Elements[i] && typeof class4Elements[i].click === 'function') {
+              class4Elements[i].click();
             }
-          });
+            
+            // 等待DOM更新
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            
+            // 查找新出现的目标元素
+            const newElements = document.querySelectorAll(selector);
+            console.log('[DivClicker] 点击class4后找到目标元素数量:', newElements.length);
+            
+            // 点击所有找到的目标元素
+            let clickedNew = 0;
+            newElements.forEach((el, index) => {
+              try {
+                console.log(`[DivClicker] 点击新出现的目标元素 ${index + 1}/${newElements.length}`);
+                if (el && typeof el.click === 'function') {
+                  el.click();
+                  clickedNew++;
+                }
+              } catch (e) {
+                console.warn(`[DivClicker] 点击新元素失败 ${index + 1}:`, e);
+              }
+            });
+            
+            totalClicked += clickedNew;
+            
+            // 收集所有元素信息（避免重复）
+            newElements.forEach(el => {
+              if (!totalTargetElements.some(existing => existing === el)) {
+                totalTargetElements.push(el);
+              }
+            });
+          } catch (e) {
+            console.warn(`[DivClicker] 处理class4元素失败 ${i + 1}:`, e);
+          }
         }
         
-        // 高亮并收集所有元素信息
-        const elementInfos = Array.from(totalTargetElements).map((el, index) => {
-          el.style.outline = '2px solid #ff4444';
-          el.style.outlineOffset = '2px';
-          
-          return {
-            index: index,
-            tagName: el.tagName.toLowerCase(),
-            className: el.className,
-            id: el.id || '',
-            text: el.innerText?.substring(0, 50) + (el.innerText?.length > 50 ? '...' : '') || '',
-            visible: el.offsetParent !== null
-          };
-        });
-        
+        // 返回简化结果，只包含计数信息
         const result = { 
           status: 'success', 
-          count: totalTargetElements.length, 
-          elements: elementInfos,
+          count: totalClicked,
           preprocessCount: class4Count
         };
         console.log('[DivClicker] 处理完成:', result);
@@ -88,6 +112,7 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
       }
     };
     
+    // 确保DOM已准备好
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', handleFind);
     } else {
@@ -97,54 +122,8 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
     return true;
   }
   
-  if (request.action === 'clickElements') {
-    console.log('[DivClicker] 开始点击指定元素，indices:', request.indices);
-    
-    const handleClick = () => {
-      try {
-        // 清除之前的高亮
-        document.querySelectorAll('[style*="outline: 2px solid #ff4444"]').forEach(el => {
-          el.style.outline = '';
-          el.style.outlineOffset = '';
-        });
-        
-        // 创建CSS选择器
-        const selector = request.classNames.map(className => `.${className}`).join('');
-        const elements = document.querySelectorAll(selector);
-        let clickedCount = 0;
-        
-        request.indices.forEach(index => {
-          if (index < elements.length) {
-            console.log(`[DivClicker] 点击元素 ${index}`);
-            elements[index].click();
-            clickedCount++;
-          }
-        });
-        
-        const result = { status: 'success', count: clickedCount };
-        console.log('[DivClicker] 点击完成:', result);
-        sendResponse(result);
-      } catch (error) {
-        console.error('[DivClicker] 发生错误:', error);
-        sendResponse({ status: 'error', message: error.message });
-      }
-    };
-    
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', handleClick);
-    } else {
-      handleClick();
-    }
-    
-    return true;
-  }
-  
   if (request.action === 'clearHighlight') {
-    // 清除高亮
-    document.querySelectorAll('[style*="outline: 2px solid #ff4444"]').forEach(el => {
-      el.style.outline = '';
-      el.style.outlineOffset = '';
-    });
+    // 由于不再使用高亮功能，此操作不需要执行任何内容
     sendResponse({ status: 'success' });
     return true;
   }

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Div Clicker</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Div Clicker</h1>
+    
+    <!-- 说明文字 -->
+    <div class="info-section">
+      <p style="font-size: 12px; color: #666; margin: 10px 0;">
+        注：在查找目标元素时，系统会自动点击所有 class4 元素以加载动态内容
+      </p>
+    </div>
+    
+    <!-- 目标元素设置区域 -->
+    <div class="target-section">
+      <div class="section-header">目标元素</div>
+      <div class="input-group">
+        <input type="text" id="classInput" placeholder="输入目标元素的class名称，多个用空格分隔" value="">
+        <div style="font-size: 11px; color: #666; margin-top: 2px;">
+          例如: button-primary 或 btn primary（必须同时包含所有class）
+        </div>
+      </div>
+    </div>
+    <div class="button-group">
+      <button id="findBtn" class="button button-primary">查找元素</button>
+      <button id="clearBtn" class="button button-secondary" style="display: none;">清除高亮</button>
+    </div>
+    <div id="status" class="status-text"></div>
+    
+    <!-- 元素列表区域 -->
+    <div id="elementsContainer" style="display: none;">
+      <div class="elements-header">
+        <span>找到的元素:</span>
+        <div class="select-controls">
+          <button id="selectAllBtn" class="mini-button">全选</button>
+          <button id="selectNoneBtn" class="mini-button">全不选</button>
+        </div>
+      </div>
+      <div id="elementsList" class="elements-list"></div>
+      <div class="action-buttons">
+        <button id="clickSelectedBtn" class="button button-success">点击选中的元素</button>
+      </div>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

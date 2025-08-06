@@ -237,6 +237,7 @@ document.addEventListener('DOMContentLoaded', function() {
   const connectionStatusDiv = document.getElementById('connectionStatus');
   
   let currentClassNames = [];
+  let isOperating = false; // 添加操作状态标志
 
   // 在独立窗口模式下显示刷新按钮
   if (isStandaloneWindow && refreshBtn) {
@@ -254,17 +255,79 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
+  // 创建停止按钮（动态创建）
+  function createStopButton() {
+    const stopBtn = document.createElement('button');
+    stopBtn.id = 'stopBtn';
+    stopBtn.className = 'button button-danger';
+    stopBtn.textContent = '停止操作';
+    stopBtn.style.display = 'none';
+    
+    // 将停止按钮插入到findBtn后面
+    findBtn.parentNode.insertBefore(stopBtn, findBtn.nextSibling);
+    
+    stopBtn.addEventListener('click', function() {
+      console.log('[DivClicker] 用户点击停止操作');
+      stopCurrentOperation();
+    });
+    
+    return stopBtn;
+  }
+
+  const stopBtn = createStopButton();
+
+  // 停止当前操作
+  function stopCurrentOperation() {
+    getTargetTab(function(tab) {
+      if (!tab) {
+        statusDiv.textContent = '未找到可操作的页面';
+        statusDiv.style.color = '#e74c3c';
+        return;
+      }
+      
+      chrome.tabs.sendMessage(tab.id, { action: 'stopOperation' }, function(response) {
+        if (chrome.runtime.lastError) {
+          console.error('[DivClicker] 停止操作通信失败:', chrome.runtime.lastError.message);
+        }
+        
+        // 重置UI状态
+        resetOperationUI();
+        statusDiv.textContent = '操作已停止';
+        statusDiv.style.color = '#e74c3c';
+      });
+    });
+  }
+
+  // 重置操作UI状态
+  function resetOperationUI() {
+    isOperating = false;
+    findBtn.style.display = 'block';
+    findBtn.disabled = false;
+    findBtn.textContent = '点击元素';
+    stopBtn.style.display = 'none';
+  }
+
+  // 设置操作UI状态
+  function setOperatingUI() {
+    isOperating = true;
+    findBtn.textContent = '操作中...';
+    findBtn.disabled = true;
+    stopBtn.style.display = 'block';
+  }
+
   // 查找元素按钮点击事件
   findBtn.addEventListener('click', function() {
-    const classNames = document.getElementById('classInput').value.trim();
-    
-    if (!classNames) {
-      statusDiv.textContent = '请输入目标元素的class名称';
-      statusDiv.style.color = '#e74c3c';
+    // 检查是否正在操作中
+    if (isOperating) {
+      statusDiv.textContent = '操作正在进行中，请稍候...';
+      statusDiv.style.color = '#f39c12';
       return;
     }
 
-    currentClassNames = classNames.split(' ').filter(name => name.trim());
+    console.log('[DivClicker] 开始自动点击操作（无需输入类名）');
+    
+    // 设置操作中的UI状态
+    setOperatingUI();
     statusDiv.textContent = '正在处理页面元素...';
     statusDiv.style.color = '#3498db';
 
@@ -274,6 +337,7 @@ document.addEventListener('DOMContentLoaded', function() {
         statusDiv.textContent = '未找到可操作的页面';
         statusDiv.style.color = '#e74c3c';
         currentTabDiv.style.display = 'none';
+        resetOperationUI();
         return;
       }
       
@@ -281,8 +345,7 @@ document.addEventListener('DOMContentLoaded', function() {
       displayCurrentTab(tab);
       
       const message = {
-        action: 'clickElements',  // 直接点击，不再是findElements
-        classNames: currentClassNames
+        action: 'autoClickElements'  // 使用新的自动点击动作
       };
       
       // 改进的消息发送和脚本注入逻辑
@@ -301,6 +364,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 console.error('[DivClicker] 脚本注入失败:', chrome.runtime.lastError.message);
                 statusDiv.textContent = `脚本注入失败: ${chrome.runtime.lastError.message}`;
                 statusDiv.style.color = '#e74c3c';
+                resetOperationUI();
                 return;
               }
               
@@ -313,6 +377,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     console.error('[DivClicker] 重试通信失败:', chrome.runtime.lastError.message);
                     statusDiv.textContent = '页面通信失败，请刷新页面后重试';
                     statusDiv.style.color = '#e74c3c';
+                    resetOperationUI();
                     return;
                   }
                   console.log('[DivClicker] 重试通信成功');
@@ -328,14 +393,22 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       
       function handleResponse(response) {
+        // 重置UI状态
+        resetOperationUI();
         
-        if (response && response.status === 'success') {
-          let statusText = `成功点击了 ${response.count} 个目标元素`;
-          if (response.preprocessCount !== undefined) {
-            statusText = `处理了 ${response.preprocessCount} 个触发元素，点击了 ${response.count} 个目标元素`;
+        if (response && (response.status === 'success' || response.status === 'stopped')) {
+          let statusText = '';
+          if (response.status === 'stopped') {
+            statusText = `操作已停止 - 已点击 ${response.count} 个目标元素`;
+            statusDiv.style.color = '#f39c12';
+          } else {
+            statusText = `操作完成 - 点击了 ${response.count} 个目标元素`;
+            if (response.preprocessCount !== undefined) {
+              statusText = `${response.mode || '默认'}模式 - 处理了 ${response.preprocessCount} 个触发元素，点击了 ${response.count} 个目标元素`;
+            }
+            statusDiv.style.color = '#2ecc71';
           }
           statusDiv.textContent = statusText;
-          statusDiv.style.color = '#2ecc71';
         } else {
           statusDiv.textContent = response?.message || '操作失败';
           statusDiv.style.color = '#e74c3c';

@@ -12,19 +12,11 @@
     <!-- 说明文字 -->
     <div class="info-section">
       <p style="font-size: 12px; color: #666; margin: 10px 0;">
-        注：点击后会自动处理 class4 元素以加载动态内容，然后直接点击所有匹配的目标元素
+        注：点击后会根据页面标题自动检测模式，依次处理 class4 元素并点击相应的目标元素
       </p>
-    </div>
-    
-    <!-- 目标元素设置区域 -->
-    <div class="target-section">
-      <div class="section-header">目标元素</div>
-      <div class="input-group">
-        <input type="text" id="classInput" placeholder="输入目标元素的class名称，多个用空格分隔" value="">
-        <div style="font-size: 11px; color: #666; margin-top: 2px;">
-          例如: button-primary 或 btn primary（必须同时包含所有class）
-        </div>
-      </div>
+      <p style="font-size: 11px; color: #999; margin: 5px 0;">
+        支持模式1/2/3/4的智能识别和相应的点击逻辑处理
+      </p>
     </div>
     <div class="button-group">
       <button id="findBtn" class="button button-primary">点击元素</button>

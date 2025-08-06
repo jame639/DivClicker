@@ -3,6 +3,7 @@
 
 # 忽略特定文件
 # config.ini
+CLAUDE.md
 
 # 忽略目录（包括其内容）
 # node_modules/
